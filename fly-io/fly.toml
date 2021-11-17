@@ -1,0 +1,7 @@
+[build]
+  image = "edgedb/edgedb:nightly"
+
+[env]
+  EDGEDB_SERVER_BACKEND_DSN_ENV = "DATABASE_URL"
+  EDGEDB_SERVER_BIND_ADDRESS = "::"
+  EDGEDB_SERVER_SECURITY = "insecure_dev_mode"
