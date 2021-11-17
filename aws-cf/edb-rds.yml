@@ -1,0 +1,696 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys a VPC with a pair of subnets spread across two
+  Availability Zones. It deploys an Internet Gateway, with a default route on
+  the public subnets. It deploys an RDS PostgreSQL master and single read
+  replica database, Fargate cluster and container definition to run an EdgeDB
+  Server.
+Parameters:
+  ServiceName:
+    Type: String
+    Default: edbdemo
+  Environment:
+    Description: Environment name
+    Type: String
+    Default: dev
+  Image:
+    Type: String
+    Default: 'edgedb/edgedb:latest'
+  ContainerPort:
+    Type: Number
+    Default: 5656
+  LoadBalancerPort:
+    Type: Number
+    Default: 5656
+  MinContainers:
+    Type: Number
+    Default: 2
+  MaxContainers:
+    Type: Number
+    Default: 10
+  AutoScalingTargetValue:
+    Type: Number
+    Default: 50
+  VpcCIDR:
+    Description: IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.0.0.0/24
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+  SubnetMasterCIDR:
+    Description: >-
+      IP range (CIDR notation) for the subnet in the RDS Master Availability
+      Zone
+    Type: String
+    Default: 10.0.0.0/28
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+  SubnetReplicaCIDR:
+    Description: >-
+      IP range (CIDR notation) for the subnet in the RDS Read Replica
+      Availability Zone
+    Type: String
+    Default: 10.0.0.16/28
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+  DBInstanceIdentifier:
+    Type: String
+    Default: demo-instance
+  ReplicaInstanceIdentifier:
+    Type: String
+    Default: demo-replica
+  DBEngine:
+    Type: String
+    Default: postgres
+  DBEngineVersion:
+    Type: String
+    Default: '12.3'
+  DBSourceRegion:
+    Type: String
+    Default: us-east-2
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.medium
+  DBStorageType:
+    Type: String
+    Default: gp2
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  DBName:
+    Type: String
+    Default: '{{resolve:ssm:/edgedb_demo/db_name:1}}'
+  DBUser:
+    Type: String
+    Default: '{{resolve:ssm:/edgedb_demo/master_username:1}}'
+  DBPassword:
+    Type: String
+    Default: '{{resolve:ssm-secure:/edgedb_demo/master_password:1}}'
+    NoEcho: true
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Demo VPC
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 17048b0a-c21b-4828-a3f0-5347c7443ffa
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Internet Gateway
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 33dfc344-50cc-42d7-a426-7189715af702
+  InternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e406e667-bd93-469e-94ca-d3332c93dc25
+  SubnetMasterDB:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs ''
+      CidrBlock: !Ref SubnetMasterCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Master Subnet (AZ1)
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 3705bebf-3e43-45d5-bb75-3e762eb8a451
+  SubnetReplicaDB:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs ''
+      CidrBlock: !Ref SubnetReplicaCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Replica Subnet (AZ2)
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: ea404f49-b411-4729-baac-000e11aea534
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 4e409b38-8edd-45a0-aeab-8ed028fc4d8a
+  DefaultPublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 1f2b3cb7-8f7f-4f8d-aec5-e00b29db715d
+  SubnetMasterRouteTableAssoc:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetMasterDB
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: eed84e27-89bc-4dc4-b05b-c2eeb5452f1c
+  SubnetReplicaRouteTableAssoc:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetReplicaDB
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 7deb5778-03a2-4166-8197-ba6ddc47c092
+  DBSubnetGroup:
+    Properties:
+      DBSubnetGroupDescription: DBSubnetGroup for RDS instances
+      SubnetIds:
+        - Ref: SubnetMasterDB
+        - Ref: SubnetReplicaDB
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 356195ab-daba-4bf1-b784-7ab09df30e7e
+  VpcDefaultSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt VPC.DefaultSecurityGroup
+      CidrIp: 0.0.0.0/0
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+  DemoMasterInstance:
+    Properties:
+      DBInstanceIdentifier:
+        Ref: DBInstanceIdentifier
+      DBName:
+        Ref: DBName
+      AllocatedStorage:
+        Ref: DBAllocatedStorage
+      DBInstanceClass:
+        Ref: DBInstanceClass
+      StorageType:
+        Ref: DBStorageType
+      Engine:
+        Ref: DBEngine
+      EngineVersion:
+        Ref: DBEngineVersion
+      MasterUsername:
+        Ref: DBUser
+      MasterUserPassword:
+        Ref: DBPassword
+      PubliclyAccessible: true
+      Tags:
+        - Key: Project
+          Value: EdgeDB Demo
+      VPCSecurityGroups:
+        - !GetAtt VPC.DefaultSecurityGroup
+      DBSubnetGroupName:
+        Ref: DBSubnetGroup
+    Type: 'AWS::RDS::DBInstance'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 9f3527ed-9bd3-412a-b5b3-05a316a5a32f
+  DemoReadReplica:
+    Properties:
+      DBInstanceIdentifier:
+        Ref: ReplicaInstanceIdentifier
+      AllocatedStorage:
+        Ref: DBAllocatedStorage
+      DBInstanceClass:
+        Ref: DBInstanceClass
+      SourceDBInstanceIdentifier:
+        Ref: DemoMasterInstance
+      SourceRegion:
+        Ref: DBSourceRegion
+      Tags:
+        - Key: Project
+          Value: EdgeDB Demo
+    Type: 'AWS::RDS::DBInstance'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 9b81e218-aca2-4ed6-943a-e70baeebf126
+  Cluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: !Join 
+        - ''
+        - - !Ref ServiceName
+          - Cluster
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 2f0926a2-a8fa-4f5b-a26c-e8d642c7ed7f
+  TaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    DependsOn: DemoMasterInstance
+    Properties:
+      Family: !Join 
+        - ''
+        - - !Ref ServiceName
+          - TaskDefinition
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 256
+      Memory: 0.5GB
+      ExecutionRoleArn: !Ref ExecutionRole
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: !Ref ServiceName
+          Image: !Ref Image
+          PortMappings:
+            - ContainerPort: 5656
+              HostPort: 5656
+            - ContainerPort: 8888
+              HostPort: 8888
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e6292d3d-820f-4387-a419-8aebce804148
+  ExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join 
+        - ''
+        - - !Ref ServiceName
+          - ExecutionRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: aef4ba2a-7320-4ea5-b45b-05b875fd6d21
+  TaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join 
+        - ''
+        - - !Ref ServiceName
+          - TaskRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: c44ec441-f374-4c94-b8e7-b56785eca7af
+  ContainerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: LogGroup
+    Properties:
+      GroupDescription: !Join 
+        - ''
+        - - !Ref ServiceName
+          - ContainerSecurityGroup
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 1219f9d2-cbcf-46a3-8c13-64c68b6698ac
+  LogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Join 
+        - ''
+        - - /ecs/
+          - !Ref ServiceName
+          - TaskDefinition
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 966f4142-184a-470a-88d9-16d9f5213aa5
+  TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckTimeoutSeconds: 10
+      HealthCheckIntervalSeconds: 30
+      UnhealthyThresholdCount: 3
+      HealthyThresholdCount: 3
+      Name: !Join 
+        - ''
+        - - !Ref ServiceName
+          - TargetGroup
+      Port: !Ref ContainerPort
+      Protocol: TCP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 300
+      TargetType: ip
+      VpcId: !Ref VPC
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 349c8169-cbb2-4dd1-a2b6-d09bb3e459a1
+  ListenerTCP:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: !Ref LoadBalancerPort
+      Protocol: TCP
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 0c88fe52-a2ba-4e0a-b162-7f802c750c93
+  LoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Type: network
+      Name: !Join 
+        - ''
+        - - !Ref ServiceName
+          - LoadBalancer
+      Scheme: internet-facing
+      Subnets:
+        - !Ref SubnetMasterDB
+        - !Ref SubnetReplicaDB
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: a21f5879-78a0-4f33-8dbd-c955437ec260
+  Service:
+    Type: 'AWS::ECS::Service'
+    DependsOn:
+      - ListenerTCP
+    Properties:
+      ServiceName: !Ref ServiceName
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      DesiredCount: 2
+      HealthCheckGracePeriodSeconds: 30
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref SubnetMasterDB
+            - !Ref SubnetReplicaDB
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+      LoadBalancers:
+        - ContainerName: !Ref ServiceName
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: e8062d34-02ae-46da-b345-9cf432dfe361
+Outputs:
+  EndpointMaster:
+    Description: Endpoint of the newly created RDS PostgreSQL master
+    Value: !GetAtt DemoMasterInstance.Endpoint.Address
+  PortReadReplica:
+    Description: Endpoint of the newly created RDS PostgreSQL replica
+    Value: !GetAtt DemoReadReplica.Endpoint.Address
+  PortDB:
+    Description: Port of the newly created RDS PostgreSQL master and replica
+    Value: !GetAtt DemoMasterInstance.Endpoint.Port
+  JdbcConnString:
+    Description: >-
+      JDBC connection string of newly created RDS PostgreSQL master, w/o
+      password
+    Value: !Join 
+      - ''
+      - - 'jdbc:postgresql://'
+        - !GetAtt DemoMasterInstance.Endpoint.Address
+        - ':'
+        - !GetAtt DemoMasterInstance.Endpoint.Port
+        - /
+        - '{{resolve:ssm:/edgedb_demo/db_name:1}}'
+        - '?user='
+        - '{{resolve:ssm:/edgedb_demo/master_username:1}}'
+        - '&password='
+        - ''
+Metadata:
+  'AWS::CloudFormation::Designer':
+    966f4142-184a-470a-88d9-16d9f5213aa5:
+      size:
+        width: 150
+        height: 150
+      position:
+        x: 630
+        'y': 90
+      z: 1
+      embeds: []
+    c44ec441-f374-4c94-b8e7-b56785eca7af:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 750
+        'y': 300
+      z: 1
+      embeds: []
+    aef4ba2a-7320-4ea5-b45b-05b875fd6d21:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 630
+        'y': 420
+      z: 1
+      embeds: []
+    2f0926a2-a8fa-4f5b-a26c-e8d642c7ed7f:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 750
+        'y': 420
+      z: 1
+      embeds: []
+    33dfc344-50cc-42d7-a426-7189715af702:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 660
+        'y': 540
+      z: 1
+      embeds: []
+    17048b0a-c21b-4828-a3f0-5347c7443ffa:
+      size:
+        width: 510
+        height: 420
+      position:
+        x: 60
+        'y': 90
+      z: 1
+      embeds:
+        - 349c8169-cbb2-4dd1-a2b6-d09bb3e459a1
+        - 1219f9d2-cbcf-46a3-8c13-64c68b6698ac
+        - ea404f49-b411-4729-baac-000e11aea534
+        - 3705bebf-3e43-45d5-bb75-3e762eb8a451
+    349c8169-cbb2-4dd1-a2b6-d09bb3e459a1:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 90
+        'y': 360
+      z: 2
+      parent: 17048b0a-c21b-4828-a3f0-5347c7443ffa
+      embeds: []
+      iscontainedinside:
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+    1219f9d2-cbcf-46a3-8c13-64c68b6698ac:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 210
+        'y': 360
+      z: 2
+      parent: 17048b0a-c21b-4828-a3f0-5347c7443ffa
+      embeds: []
+      iscontainedinside:
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+      dependson:
+        - 966f4142-184a-470a-88d9-16d9f5213aa5
+    4e409b38-8edd-45a0-aeab-8ed028fc4d8a:
+      size:
+        width: 240
+        height: 240
+      position:
+        x: 360
+        'y': 570
+      z: 1
+      embeds:
+        - 1f2b3cb7-8f7f-4f8d-aec5-e00b29db715d
+    ea404f49-b411-4729-baac-000e11aea534:
+      size:
+        width: 150
+        height: 150
+      position:
+        x: 300
+        'y': 150
+      z: 2
+      parent: 17048b0a-c21b-4828-a3f0-5347c7443ffa
+      embeds: []
+      iscontainedinside:
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+    7deb5778-03a2-4166-8197-ba6ddc47c092:
+      source:
+        id: 4e409b38-8edd-45a0-aeab-8ed028fc4d8a
+      target:
+        id: ea404f49-b411-4729-baac-000e11aea534
+      z: 2
+    3705bebf-3e43-45d5-bb75-3e762eb8a451:
+      size:
+        width: 150
+        height: 150
+      position:
+        x: 90
+        'y': 150
+      z: 2
+      parent: 17048b0a-c21b-4828-a3f0-5347c7443ffa
+      embeds: []
+      iscontainedinside:
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+        - 17048b0a-c21b-4828-a3f0-5347c7443ffa
+    a21f5879-78a0-4f33-8dbd-c955437ec260:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 660
+        'y': 660
+      z: 1
+      embeds: []
+      iscontainedinside:
+        - 3705bebf-3e43-45d5-bb75-3e762eb8a451
+        - ea404f49-b411-4729-baac-000e11aea534
+    0c88fe52-a2ba-4e0a-b162-7f802c750c93:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 840
+        'y': 90
+      z: 1
+      embeds: []
+    356195ab-daba-4bf1-b784-7ab09df30e7e:
+      size:
+        width: 160
+        height: 160
+      position:
+        x: 60
+        'y': 570
+      z: 1
+      embeds:
+        - 9f3527ed-9bd3-412a-b5b3-05a316a5a32f
+      iscontainedinside:
+        - 3705bebf-3e43-45d5-bb75-3e762eb8a451
+        - ea404f49-b411-4729-baac-000e11aea534
+    9f3527ed-9bd3-412a-b5b3-05a316a5a32f:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 90
+        'y': 630
+      z: 2
+      parent: 356195ab-daba-4bf1-b784-7ab09df30e7e
+      embeds: []
+      iscontainedinside:
+        - 356195ab-daba-4bf1-b784-7ab09df30e7e
+        - 356195ab-daba-4bf1-b784-7ab09df30e7e
+    e6292d3d-820f-4387-a419-8aebce804148:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 780
+        'y': 540
+      z: 1
+      embeds: []
+      dependson:
+        - 9f3527ed-9bd3-412a-b5b3-05a316a5a32f
+    e8062d34-02ae-46da-b345-9cf432dfe361:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 780
+        'y': 660
+      z: 1
+      embeds: []
+      dependson:
+        - 0c88fe52-a2ba-4e0a-b162-7f802c750c93
+    9b81e218-aca2-4ed6-943a-e70baeebf126:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 870
+        'y': 210
+      z: 1
+      embeds: []
+      isassociatedwith:
+        - 9f3527ed-9bd3-412a-b5b3-05a316a5a32f
+    eed84e27-89bc-4dc4-b05b-c2eeb5452f1c:
+      source:
+        id: 4e409b38-8edd-45a0-aeab-8ed028fc4d8a
+      target:
+        id: 3705bebf-3e43-45d5-bb75-3e762eb8a451
+      z: 2
+    e406e667-bd93-469e-94ca-d3332c93dc25:
+      source:
+        id: 17048b0a-c21b-4828-a3f0-5347c7443ffa
+      target:
+        id: 33dfc344-50cc-42d7-a426-7189715af702
+      z: 1
+    1f2b3cb7-8f7f-4f8d-aec5-e00b29db715d:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 390
+        'y': 630
+      z: 2
+      parent: 4e409b38-8edd-45a0-aeab-8ed028fc4d8a
+      embeds: []
+      isassociatedwith:
+        - 33dfc344-50cc-42d7-a426-7189715af702
+      iscontainedinside:
+        - 4e409b38-8edd-45a0-aeab-8ed028fc4d8a
+        - 4e409b38-8edd-45a0-aeab-8ed028fc4d8a
+      dependson:
+        - e406e667-bd93-469e-94ca-d3332c93dc25
