@@ -10,20 +10,12 @@
                 "description": "Unique name for the deployment, used for the Postgres server and EdgeDB container."
             }
         },
-        "postgresAdminUsername": {
-            "type": "string",
-            "minLength": 4,
-            "maxLength": 128,
-            "metadata": {
-                "description": "Administrator username for Postgres."
-            }
-        },
-        "postgresAdminPassword": {
+        "adminPassword": {
             "type": "securestring",
             "minLength": 8,
             "maxLength": 128,
             "metadata": {
-                "description": "Administrator password for Postgres. Must be at least 8 characters in length, must contain characters from three of the following categories – English uppercase letters, English lowercase letters, numbers (0-9), and non-alphanumeric characters (!, $, #, %, etc.)."
+                "description": "Administrator password for both Postgres and EdgeDB. Must be at least 8 characters in length, must contain characters from three of the following categories – English uppercase letters, English lowercase letters, numbers (0-9), and non-alphanumeric characters (!, $, #, %, etc.)."
             }
         },
         "postgresServerEdition": {
@@ -83,22 +75,6 @@
             "metadata": {
                 "description": "Azure database for PostgreSQL SKU storage size."
             }
-        },
-        "edgedbAdminUsername": {
-            "type": "string",
-            "minLength": 4,
-            "maxLength": 128,
-            "metadata": {
-                "description": "Administrator username for EdgeDB."
-            }
-        },
-        "edgedbAdminPassword": {
-            "type": "securestring",
-            "minLength": 8,
-            "maxLength": 128,
-            "metadata": {
-                "description": "Administrator password for EdgeDB. Must be at least 8 characters in length."
-            }
         }
     },
     "variables": {
@@ -106,8 +82,7 @@
         "postgresServerName": "[concat(parameters('name'), '-pg-server')]",
         "containerGroupName": "[concat(parameters('name'), '-container-group')]",
         "containerName": "edgedb-server",
-        "containerImage": "edgedb/edgedb:nightly",
-        "backendDSN": "[concat('postgresql://', parameters('postgresAdminUsername'), ':', parameters('postgresAdminPassword'), '@', variables('postgresServerName'), '.postgres.database.azure.com?sslmode=require')]"
+        "containerImage": "edgedb/edgedb:nightly"
     },
     "resources": [
         {
@@ -116,8 +91,8 @@
             "name": "[variables('postgresServerName')]",
             "properties": {
                 "version": "12",
-                "administratorLogin": "[parameters('postgresAdminUsername')]",
-                "administratorLoginPassword": "[parameters('postgresAdminPassword')]",
+                "administratorLogin": "edgedb",
+                "administratorLoginPassword": "[parameters('adminPassword')]",
                 "storage": {
                     "storageSizeGB": "[parameters('postgresDiskSizeGB')]"
                 }
@@ -156,11 +131,11 @@
                             "environmentVariables": [
                                 {
                                     "name": "EDGEDB_SERVER_USER",
-                                    "value": "[parameters('edgedbAdminUsername')]"
+                                    "value": "edgedb"
                                 },
                                 {
                                     "name": "EDGEDB_SERVER_PASSWORD",
-                                    "secureValue": "[parameters('edgedbAdminPassword')]"
+                                    "secureValue": "[parameters('adminPassword')]"
                                 },
                                 {
                                     "name": "EDGEDB_SERVER_GENERATE_SELF_SIGNED_CERT",
@@ -168,7 +143,7 @@
                                 },
                                 {
                                     "name": "EDGEDB_SERVER_BACKEND_DSN",
-                                    "secureValue": "[concat('postgresql://', parameters('postgresAdminUsername'), ':', parameters('postgresAdminPassword'), '@', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('postgresServerName'))).fullyQualifiedDomainName, '/postgres?sslmode=require')]"
+                                    "secureValue": "[concat('postgresql://edgedb', ':', parameters('adminPassword'), '@', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('postgresServerName'))).fullyQualifiedDomainName, '/postgres?sslmode=require')]"
                                 }
                             ],
                             "ports": [
@@ -211,6 +186,10 @@
         },
         "ipaddress": {
             "value": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.ip]",
+            "type": "string"
+        },
+        "dsn": {
+            "value": "[concat('edgedb://edgedb@', reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.fqdn)]",
             "type": "string"
         }
     }
