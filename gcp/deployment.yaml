@@ -14,6 +14,7 @@ spec:
       labels:
         app: edgedb
     spec:
+      enableServiceLinks: false
       containers:
         - name: edgedb
           image: edgedb/edgedb:nightly
@@ -30,8 +31,6 @@ spec:
           env:
             - name: EDGEDB_SERVER_TLS_CERT_MODE
               value: generate_self_signed
-            - name: EDGEDB_PORT  # override dockers EDGEDB_PORT value
-              value: "5656"  # value should match containerPort
             - name: EDGEDB_SERVER_PASSWORD
               valueFrom:
                 secretKeyRef:
