@@ -67,24 +67,30 @@ Resources:
         - Key: Name
           Value: !Sub "edgedb-${InstanceName}-public-network-acl"
 
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-network-acl-entry.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
   NetworkAclEntryInPublicAllowInternet:
     Type: "AWS::EC2::NetworkAclEntry"
     Properties:
       NetworkAclId: !Ref NetworkAclPublic
       RuleNumber: 99
-      Protocol: -1
+      Protocol: 6
+      PortRange:
+        From: 0
+        To: 65535
       RuleAction: allow
       Egress: false
       CidrBlock: "0.0.0.0/0"
 
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-network-acl-entry.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
   NetworkAclEntryOutPublicAllowInternet:
     Type: "AWS::EC2::NetworkAclEntry"
     Properties:
       NetworkAclId: !Ref NetworkAclPublic
       RuleNumber: 99
-      Protocol: -1
+      Protocol: 6
+      PortRange:
+        From: 0
+        To: 65535
       RuleAction: allow
       Egress: true
       CidrBlock: "0.0.0.0/0"
@@ -107,7 +113,7 @@ Resources:
         - Key: Name
           Value: !Sub "edgedb-${InstanceName}-private-network-acl"
 
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-network-acl-entry.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
   NetworkAclEntryInPrivateAllowVPC:
     Type: "AWS::EC2::NetworkAclEntry"
     Properties:
@@ -118,7 +124,7 @@ Resources:
       Egress: false
       CidrBlock: "0.0.0.0/0"
 
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-network-acl-entry.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
   NetworkAclEntryOutPrivateAllowVPC:
     Type: "AWS::EC2::NetworkAclEntry"
     Properties:
@@ -309,38 +315,6 @@ Resources:
       SubnetId: !Ref SubnetBPrivate
       RouteTableId: !Ref RouteTableBPrivate
 
-  # -----------------------------------
-  # Public Load Balancer Security Group
-  # -----------------------------------
-
-  # # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
-  LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Sub "edgedb-${InstanceName}-elb-security-group"
-      GroupDescription: !Sub "Security group to control external access to the load balancer. ${InstanceName}"
-      VpcId: !Ref "VPC"
-      SecurityGroupIngress:
-        - IpProtocol: "tcp"
-          FromPort: 443
-          ToPort: 443
-          CidrIp: "0.0.0.0/0"
-        - IpProtocol: "tcp"
-          FromPort: 5656
-          ToPort: 5656
-          CidrIp: "0.0.0.0/0"
-        - IpProtocol: "tcp"
-          FromPort: 443
-          ToPort: 443
-          CidrIpv6: "::/0"
-        - IpProtocol: "tcp"
-          FromPort: 5656
-          ToPort: 5656
-          CidrIpv6: "::/0"
-      Tags:
-        - Key: "Name"
-          Value: !Sub "edgedb-${InstanceName}-elb-security-group"
-
   # ------------------
   # ECS Security Group
   # ------------------
@@ -354,11 +328,7 @@ Resources:
       VpcId: !Ref "VPC"
       SecurityGroupIngress:
         - IpProtocol: "tcp"
-          SourceSecurityGroupId: !Ref "LoadBalancerSecurityGroup"
-          FromPort: 443
-          ToPort: 443
-        - IpProtocol: "tcp"
-          SourceSecurityGroupId: !Ref "LoadBalancerSecurityGroup"
+          CidrIp: "0.0.0.0/0"
           FromPort: 5656
           ToPort: 5656
       Tags:
@@ -423,24 +393,20 @@ Resources:
       VpcSecurityGroupIds:
         - !Ref "RDSSecurityGroup"
 
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-rds-database-instance.html
   AuroraInstanceA:
     Type: "AWS::RDS::DBInstance"
     Properties:
       AvailabilityZone: !GetAtt "SubnetAPrivate.AvailabilityZone"
       Engine: "aurora-postgresql"
-      DBInstanceIdentifier: !Sub "edgedb-${InstanceName}-postgres-instance-a"
       DBClusterIdentifier: !Ref AuroraCluster
       DBInstanceClass: db.t3.medium
       DBSubnetGroupName: !Ref "RDSSubnetGroup"
 
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-rds-database-instance.html
   AuroraInstanceB:
     Type: "AWS::RDS::DBInstance"
     Properties:
       AvailabilityZone: !GetAtt "SubnetBPrivate.AvailabilityZone"
       Engine: "aurora-postgresql"
-      DBInstanceIdentifier: !Sub "edgedb-${InstanceName}-postgres-instance-b"
       DBClusterIdentifier: !Ref AuroraCluster
       DBInstanceClass: db.t3.medium
       DBSubnetGroupName: !Ref "RDSSubnetGroup"
@@ -558,7 +524,6 @@ Resources:
   Service:
     Type: AWS::ECS::Service
     DependsOn:
-      - Listener443
       - Listener5656
     Properties:
       ServiceName: !Ref InstanceName
@@ -567,7 +532,7 @@ Resources:
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200
-      DesiredCount: 1
+      DesiredCount: 2
       HealthCheckGracePeriodSeconds: 120
       LaunchType: FARGATE
       NetworkConfiguration:
@@ -592,7 +557,8 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       HealthCheckIntervalSeconds: 10
-      HealthCheckProtocol: TCP
+      HealthCheckPath: /server/status/ready
+      HealthCheckProtocol: HTTPS
       UnhealthyThresholdCount: 2
       HealthyThresholdCount: 2
       Name: !Sub "edgedb-${InstanceName}-target-group"
@@ -613,17 +579,6 @@ Resources:
           Type: forward
       LoadBalancerArn: !Ref LoadBalancer
       Port: 5656
-      Protocol: TCP
-
-  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-listener.html
-  Listener443:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-        - TargetGroupArn: !Ref TargetGroup
-          Type: forward
-      LoadBalancerArn: !Ref LoadBalancer
-      Port: 443
       Protocol: TCP
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-loadbalancer.html
