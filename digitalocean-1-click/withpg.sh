@@ -23,10 +23,14 @@ chown --recursive edgedb:edgedb /var/lib/edgedb
 
 sudo -i -u edgedb bash << EOF
 $EDGEDB_SERVER_BIN \
-	--data-dir /var/lib/edgedb/data \
-	--bootstrap-only "--bootstrap-command=ALTER ROLE edgedb { SET password := 'edgedbpassword' }" \
-	--tls-cert-mode generate_self_signed
+	--data-dir=/var/lib/edgedb/data \
+	--bootstrap-only \
+	--bootstrap-command="ALTER ROLE edgedb { SET password := 'edgedbpassword' }" \
+	--tls-cert-mode=generate_self_signed
 EOF
+
+# Don't include the tls certificate in the image.
+rm /var/lib/edgedb/data/*.pem
 
 cat << EOF > /etc/systemd/system/edgedb.service
 [Unit]
@@ -40,7 +44,11 @@ Type=notify
 User=edgedb
 Group=edgedb
 RuntimeDirectory=edgedb
-ExecStart=/usr/bin/${EDGEDB_SERVER_BIN} --data-dir=/var/lib/edgedb/data --runstate-dir=%t/edgedb --tls-cert-mode generate_self_signed --bind-address 0.0.0.0
+ExecStart=/usr/bin/${EDGEDB_SERVER_BIN} \
+	--data-dir=/var/lib/edgedb/data \
+	--runstate-dir=%t/edgedb \
+	--tls-cert-mode=generate_self_signed \
+	--bind-address=0.0.0.0
 ExecReload=/bin/kill -HUP \${MAINPID}
 KillMode=mixed
 TimeoutSec=0
@@ -50,8 +58,4 @@ WantedBy=default.target
 EOF
 
 systemctl daemon-reload
-systemctl start edgedb.service
 systemctl enable edgedb.service
-
-# Don't include the tls certificate in this image.
-rm /var/lib/edgedb/data/*.pem
