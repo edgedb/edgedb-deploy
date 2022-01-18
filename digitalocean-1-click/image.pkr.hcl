@@ -18,39 +18,13 @@ source "digitalocean" "x" {
 }
 
 build {
-  name = "with-pg"
-
-  source "digitalocean.x" {
-    droplet_name  = "edgedb-withpg-${var.package_version}-builder-${uuidv4()}"
-    snapshot_name = "edgedb-withpg-${var.package_version}"
-  } 
-
-  provisioner "shell" {
-    script = "withpg.sh"
-    environment_vars = [
-      "EDGEDB_PKG=edgedb-${var.package_version}",
-      "EDGEDB_SERVER_BIN=edgedb-server-${var.package_version}"
-    ]
-  }
-
-  provisioner "shell" {
-    scripts = [
-      "cleanup.sh",
-      "img_check.sh",
-    ]
-  }
-}
-
-build {
-  name = "without-pg"
-
   source "digitalocean.x" {
     droplet_name  = "edgedb-${var.package_version}-builder-${uuidv4()}"
     snapshot_name = "edgedb-${var.package_version}"
   }
 
   provisioner "shell" {
-    script = "withoutpg.sh"
+    script = "setup.sh"
     environment_vars = [
       "EDGEDB_PKG=edgedb-${var.package_version}",
       "EDGEDB_SERVER_BIN=edgedb-server-${var.package_version}"
