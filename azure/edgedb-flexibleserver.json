@@ -130,10 +130,6 @@
                             "image": "[variables('containerImage')]",
                             "environmentVariables": [
                                 {
-                                    "name": "EDGEDB_SERVER_USER",
-                                    "value": "edgedb"
-                                },
-                                {
                                     "name": "EDGEDB_SERVER_PASSWORD",
                                     "secureValue": "[parameters('adminPassword')]"
                                 },
