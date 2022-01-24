@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edgedb
+  labels:
+    app: edgedb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: edgedb
+  template:
+    metadata:
+      labels:
+        app: edgedb
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: edgedb
+          image: edgedb/edgedb:nightly
+          ports:
+            - containerPort: 5656
+          readinessProbe:
+            httpGet:
+              path: /server/status/ready
+              port: 5656
+          livenessProbe:
+            httpGet:
+              path: /server/status/ready
+              port: 5656
+          env:
+            - name: EDGEDB_SERVER_TLS_CERT_MODE
+              value: generate_self_signed
+            - name: EDGEDB_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-db-credentials
+                  key: password
+            - name: EDGEDB_SERVER_BACKEND_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-db-credentials
+                  key: dsn
+            - name: EDGEDB_SERVER_TLS_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-tls-credentials
+                  key: tlscert
+                  optional: true
+            - name: EDGEDB_SERVER_TLS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-tls-credentials
+                  key: tlskey
+                  optional: true
+        - name: cloudsql-proxy
+          image: gcr.io/cloudsql-docker/gce-proxy:1.27.0
+          command: 
+            - "/cloud_sql_proxy"
+            - "-credential_file=/secrets/cloudsql/credentials.json"
+          env:
+            - name: INSTANCES
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsql-db-credentials
+                  key: instance
+          securityContext:
+            runAsUser: 2  # non-root user
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: cloudsql-instance-credentials
+              mountPath: /secrets/cloudsql
+              readOnly: true
+      volumes:
+        - name: cloudsql-instance-credentials
+          secret:
+            secretName: cloudsql-instance-credentials
