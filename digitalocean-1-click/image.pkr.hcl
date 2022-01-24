@@ -1,6 +1,5 @@
 variable "package_version" {
   type    = string
-  default = "1-rc3"
 }
 
 variable "token" {
@@ -11,9 +10,9 @@ variable "token" {
 
 source "digitalocean" "x" {
   api_token     = "${var.token}"
-  image         = "ubuntu-18-04-x64"
+  image         = "ubuntu-20-04-x64"
   region        = "sfo3"
-  size          = "s-1vcpu-2gb"
+  size          = "s-1vcpu-1gb"
   ssh_username  = "root"
 }
 
