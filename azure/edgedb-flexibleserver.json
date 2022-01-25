@@ -90,7 +90,7 @@
             "location": "[resourceGroup().location]",
             "name": "[variables('postgresServerName')]",
             "properties": {
-                "version": "12",
+                "version": "13",
                 "administratorLogin": "edgedb",
                 "administratorLoginPassword": "[parameters('adminPassword')]",
                 "storage": {
