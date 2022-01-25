@@ -1,0 +1,192 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2014-04-01-preview/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "name": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 63,
+            "metadata": {
+                "description": "Unique name for the deployment, used for the Postgres server and EdgeDB container."
+            }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "minLength": 8,
+            "maxLength": 128,
+            "metadata": {
+                "description": "Administrator password for both Postgres and EdgeDB. Must be at least 8 characters in length, must contain characters from three of the following categories – English uppercase letters, English lowercase letters, numbers (0-9), and non-alphanumeric characters (!, $, #, %, etc.)."
+            }
+        },
+        "postgresServerEdition": {
+            "type": "string",
+            "defaultValue": "GeneralPurpose",
+            "allowedValues": [
+                "Burstable",
+                "GeneralPurpose",
+                "MemoryOptimized"
+            ],
+            "metadata": {
+                "description": "Azure database for PostgreSQL pricing tier."
+            }
+        },
+        "postgresVMName": {
+            "type": "string",
+            "defaultValue": "Standard_D4s_v3",
+            "allowedValues": [
+                "Standard_B1ms",
+                "Standard_B2s",
+                "Standard_D16ds_v4",
+                "Standard_D16s_v3",
+                "Standard_D2ds_v4",
+                "Standard_D2s_v3",
+                "Standard_D32ds_v4",
+                "Standard_D32s_v3",
+                "Standard_D48ds_v4",
+                "Standard_D48s_v3",
+                "Standard_D4ds_v4",
+                "Standard_D4s_v3",
+                "Standard_D64ds_v4",
+                "Standard_D64s_v3",
+                "Standard_D8ds_v4",
+                "Standard_D8s_v3",
+                "Standard_E16ds_v4",
+                "Standard_E16s_v3",
+                "Standard_E20ds_v4",
+                "Standard_E2ds_v4",
+                "Standard_E2s_v3",
+                "Standard_E32ds_v4",
+                "Standard_E32s_v3",
+                "Standard_E48ds_v4",
+                "Standard_E48s_v3",
+                "Standard_E4ds_v4",
+                "Standard_E4s_v3",
+                "Standard_E64ds_v4",
+                "Standard_E64s_v3",
+                "Standard_E8ds_v4",
+                "Standard_E8s_v3"
+            ]
+        },
+        "postgresDiskSizeGB": {
+            "type": "int",
+            "minValue": 5,
+            "maxValue": 4194,
+            "defaultValue": 128,
+            "metadata": {
+                "description": "Azure database for PostgreSQL SKU storage size."
+            }
+        }
+    },
+    "variables": {
+        "api": "2021-06-01",
+        "postgresServerName": "[concat(parameters('name'), '-pg-server')]",
+        "containerGroupName": "[concat(parameters('name'), '-container-group')]",
+        "containerName": "edgedb-server",
+        "containerImage": "edgedb/edgedb:nightly"
+    },
+    "resources": [
+        {
+            "apiVersion": "[variables('api')]",
+            "location": "[resourceGroup().location]",
+            "name": "[variables('postgresServerName')]",
+            "properties": {
+                "version": "13",
+                "administratorLogin": "edgedb",
+                "administratorLoginPassword": "[parameters('adminPassword')]",
+                "storage": {
+                    "storageSizeGB": "[parameters('postgresDiskSizeGB')]"
+                }
+            },
+            "sku": {
+                "name": "[parameters('postgresVMName')]",
+                "tier": "[parameters('postgresServerEdition')]"
+            },
+            "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+            "resources": [
+                {
+                    "type": "firewallRules",
+                    "name": "allow-all-azure-internal",
+                    "apiVersion": "[variables('api')]",
+                    "properties": {
+                        "StartIpAddress": "0.0.0.0",
+                        "EndIpAddress": "0.0.0.0"
+                    },
+                    "dependsOn": [
+                        "[concat('Microsoft.DBforPostgreSQL/flexibleServers/', variables('postgresServerName'))]"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.ContainerInstance/containerGroups",
+            "name": "[variables('containerGroupName')]",
+            "apiVersion": "2018-10-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "containers": [
+                    {
+                        "name": "[variables('containerName')]",
+                        "properties": {
+                            "image": "[variables('containerImage')]",
+                            "environmentVariables": [
+                                {
+                                    "name": "EDGEDB_SERVER_PASSWORD",
+                                    "secureValue": "[parameters('adminPassword')]"
+                                },
+                                {
+                                    "name": "EDGEDB_SERVER_GENERATE_SELF_SIGNED_CERT",
+                                    "value": "1"
+                                },
+                                {
+                                    "name": "EDGEDB_SERVER_BACKEND_DSN",
+                                    "secureValue": "[concat('postgresql://edgedb', ':', parameters('adminPassword'), '@', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('postgresServerName'))).fullyQualifiedDomainName, '/postgres?sslmode=require')]"
+                                }
+                            ],
+                            "ports": [
+                                {
+                                    "protocol": "TCP",
+                                    "port": 5656
+                                }
+                            ],
+                            "resources": {
+                                "requests": {
+                                    "memoryInGB": 1.5,
+                                    "cpu": 1
+                                }
+                            }
+                        }
+                    }
+                ],
+                "restartPolicy": "Always",
+                "ipAddress": {
+                    "ports": [
+                        {
+                            "protocol": "TCP",
+                            "port": 5656
+                        }
+                    ],
+                    "type": "Public",
+                    "dnsNameLabel": "[parameters('name')]"
+                },
+                "osType": "Linux"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('postgresServerName'))]"
+            ]
+        }
+    ],
+    "outputs": {
+        "fqdn": {
+            "value": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.fqdn]",
+            "type": "string"
+        },
+        "ipaddress": {
+            "value": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.ip]",
+            "type": "string"
+        },
+        "dsn": {
+            "value": "[concat('edgedb://edgedb@', reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.fqdn)]",
+            "type": "string"
+        }
+    }
+}
