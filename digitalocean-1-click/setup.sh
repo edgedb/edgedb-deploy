@@ -2,21 +2,38 @@
 
 set -ex
 
-curl https://packages.edgedb.com/keys/edgedb.asc \
-| sudo apt-key add -
+mkdir -p /etc/apt/trusted.gpg.d/
 
-echo deb https://packages.edgedb.com/apt $(lsb_release -cs) main \
-| sudo tee /etc/apt/sources.list.d/edgedb.list
+curl -fsSL -o /etc/apt/trusted.gpg.d/edgedb.asc \
+	https://packages.edgedb.com/keys/edgedb.asc
 
-apt-get -y update 
+(
+	source /etc/os-release
+	echo deb https://packages.edgedb.com/apt "${VERSION_CODENAME}" main \
+	| tee /etc/apt/sources.list.d/edgedb.list
+)
 
-# Occasionally there is a race with the background updater.
-while fuser --verbose /var/lib/dpkg/lock-frontend
-do
-	sleep 5
+try=1
+while [ $try -le 30 ]; do
+	apt-get update && break || true
+	try=$(( $try + 1 ))
+	echo "Retrying in 10 seconds (try #${try})"
+	sleep 10
 done
-apt-get -y dist-upgrade
-apt-get -y install $EDGEDB_PKG
+try=1
+while [ $try -le 30 ]; do
+	apt-get -y dist-upgrade && break || true
+	try=$(( $try + 1 ))
+	echo "Retrying in 10 seconds (try #${try})"
+	sleep 10
+done
+try=1
+while [ $try -le 30 ]; do
+	apt-get -y install $EDGEDB_PKG && break || true
+	try=$(( $try + 1 ))
+	echo "Retrying in 10 seconds (try #${try})"
+	sleep 10
+done
 
 mkdir -p /var/lib/edgedb/data
 chown --recursive edgedb:edgedb /var/lib/edgedb
