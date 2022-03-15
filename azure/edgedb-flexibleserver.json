@@ -82,7 +82,7 @@
         "postgresServerName": "[concat(parameters('name'), '-pg-server')]",
         "containerGroupName": "[concat(parameters('name'), '-container-group')]",
         "containerName": "edgedb-server",
-        "containerImage": "edgedb/edgedb:nightly"
+        "containerImage": "edgedb/edgedb"
     },
     "resources": [
         {
