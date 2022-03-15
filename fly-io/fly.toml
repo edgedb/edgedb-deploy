@@ -1,5 +1,5 @@
 [build]
-  image = "edgedb/edgedb:nightly"
+  image = "edgedb/edgedb"
 
 [env]
   EDGEDB_SERVER_BACKEND_DSN_ENV = "DATABASE_URL"
