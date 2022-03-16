@@ -16,6 +16,7 @@ Documentation on building images for DigitalOcean Marketplace is
 
 ## To update the DigitalOcean's Marketplace image
 
-Build an image. Then find the image you built on [this
-page](https://cloud.digitalocean.com/images/snapshots/droplets) and select
-`Update a 1-click App` from the `More` drop down.
+0. build an image
+1. find the image on [this page](https://cloud.digitalocean.com/images/snapshots/droplets)
+2. add the image to all regions
+3. select `Update a 1-click App` from the `More` drop down.
