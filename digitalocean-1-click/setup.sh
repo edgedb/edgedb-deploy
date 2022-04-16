@@ -69,6 +69,7 @@ RUNSTATE_DIR="\$1"
 args="--runstate-dir=\$RUNSTATE_DIR"
 args="\$args --tls-cert-mode=generate_self_signed"
 args="\$args --bind-address=0.0.0.0"
+args="\$args --compiler-pool-mode=on_demand"
 
 if [ ! -z "\$EDGEDB_SERVER_SECURITY" ]; then
 	args="\$args --security=\${EDGEDB_SERVER_SECURITY}"
