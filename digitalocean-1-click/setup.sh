@@ -113,4 +113,4 @@ WantedBy=default.target
 EOF
 
 systemctl daemon-reload
-systemctl enable edgedb.service
+systemctl enable --now edgedb.service
