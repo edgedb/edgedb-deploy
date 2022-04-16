@@ -1,5 +1,5 @@
 variable "package_version" {
-  type    = string
+  type = string
 }
 
 variable "token" {
@@ -9,11 +9,11 @@ variable "token" {
 }
 
 source "digitalocean" "x" {
-  api_token     = "${var.token}"
-  image         = "ubuntu-20-04-x64"
-  region        = "sfo3"
-  size          = "s-1vcpu-1gb"
-  ssh_username  = "root"
+  api_token    = "${var.token}"
+  image        = "ubuntu-20-04-x64"
+  region       = "sfo3"
+  size         = "s-1vcpu-1gb"
+  ssh_username = "root"
 }
 
 build {
@@ -25,7 +25,7 @@ build {
   provisioner "shell" {
     script = "setup.sh"
     environment_vars = [
-      "EDGEDB_PKG=edgedb-${var.package_version}",
+      "EDGEDB_PKG=edgedb-server-${var.package_version}",
       "EDGEDB_SERVER_BIN=edgedb-server-${var.package_version}"
     ]
   }

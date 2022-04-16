@@ -29,7 +29,7 @@ while [ $try -le 30 ]; do
 done
 try=1
 while [ $try -le 30 ]; do
-	apt-get -y install $EDGEDB_PKG && break || true
+	apt-get -y install edgedb-cli $EDGEDB_PKG && break || true
 	try=$(( $try + 1 ))
 	echo "Retrying in 10 seconds (try #${try})"
 	sleep 10
