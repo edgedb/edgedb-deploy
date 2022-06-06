@@ -20,10 +20,10 @@ Parameters:
     Description: "The name of this EdgeDB service stack."
     Type: String
     Default: "project"
-    AllowedPattern: '[a-z][0-9a-z-]{1,100}'
+    AllowedPattern: '[a-z][0-9a-z-]{1,24}'
     ConstraintDescription: >
       must only contain lowercase letters and numbers, start with
-      a lowercase letter, and be no longer than 100 characters
+      a lowercase letter, and be between 2 and 25 characters long
 
 Resources:
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html
@@ -561,7 +561,7 @@ Resources:
       HealthCheckProtocol: HTTPS
       UnhealthyThresholdCount: 2
       HealthyThresholdCount: 2
-      Name: !Sub "edgedb-${InstanceName}-target-group"
+      Name: !Sub "edb-${InstanceName}-tg"
       Port: 5656
       Protocol: TCP
       TargetGroupAttributes:
@@ -587,7 +587,7 @@ Resources:
     DependsOn: VPCGatewayAttachment
     Properties:
       Type: network
-      Name: !Sub "edgedb-${InstanceName}-load-balancer"
+      Name: !Sub "edb-${InstanceName}-lb"
       Scheme: internet-facing
       Subnets:
         - !Ref "SubnetAPublic"
