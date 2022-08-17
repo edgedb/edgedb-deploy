@@ -22,7 +22,7 @@ while [ $try -le 30 ]; do
 done
 try=1
 while [ $try -le 30 ]; do
-	apt-get -y dist-upgrade && break || true
+	apt-get -y upgrade && break || true
 	try=$(( $try + 1 ))
 	echo "Retrying in 10 seconds (try #${try})"
 	sleep 10
@@ -43,7 +43,8 @@ $EDGEDB_SERVER_BIN \
 	--data-dir=/var/lib/edgedb/data \
 	--bootstrap-only \
 	--bootstrap-command="ALTER ROLE edgedb { SET password := 'edgedbpassword' }" \
-	--tls-cert-mode=generate_self_signed
+	--tls-cert-mode=generate_self_signed \
+	--compiler-pool-mode=on_demand
 EOF
 
 # Don't include the tls certificate in the image.
