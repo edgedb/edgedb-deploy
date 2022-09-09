@@ -36,7 +36,7 @@ Resources:
       InstanceTenancy: default
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-vpc"
+          Value: !Sub "${InstanceName}-vpc"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html
   InternetGateway:
@@ -44,7 +44,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-internet-gateway"
+          Value: !Sub "${InstanceName}-igw"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc-gateway-attachment.html
   VPCGatewayAttachment:
@@ -65,7 +65,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-public-network-acl"
+          Value: !Sub "${InstanceName}-pubacl"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
   NetworkAclEntryInPublicAllowInternet:
@@ -111,7 +111,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-private-network-acl"
+          Value: !Sub "${InstanceName}-privacl"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
   NetworkAclEntryInPrivateAllowVPC:
@@ -149,7 +149,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-subnet-a-public"
+          Value: !Sub "${InstanceName}-sn-a-pub"
         - Key: Reach
           Value: public
 
@@ -167,7 +167,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-route-table-a-public"
+          Value: !Sub "${InstanceName}-rt-a-pub"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-route.html
   RouteTableAPublicInternetRoute:
@@ -198,7 +198,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-subnet-a-private"
+          Value: !Sub "${InstanceName}-sn-a-priv"
         - Key: Reach
           Value: private
 
@@ -209,7 +209,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-route-table-a-private"
+          Value: !Sub "${InstanceName}-rt-a-priv"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-network-acl-assoc.html
   SubnetNetworkAclAssociationAPrivate:
@@ -239,7 +239,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-subnet-b-public"
+          Value: !Sub "${InstanceName}-sn-b-pub"
         - Key: Reach
           Value: public
 
@@ -257,7 +257,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-route-table-b-public"
+          Value: !Sub "${InstanceName}-rt-b-pub"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-route.html
   RouteTableBPublicInternetRoute:
@@ -288,7 +288,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-subnet-b-private"
+          Value: !Sub "${InstanceName}-sn-b-priv"
         - Key: Reach
           Value: private
 
@@ -299,7 +299,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "edgedb-${InstanceName}-route-table-b-private"
+          Value: !Sub "${InstanceName}-rt-b-priv"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-network-acl-assoc.html
   SubnetNetworkAclAssociationBPrivate:
@@ -323,7 +323,7 @@ Resources:
   EC2SecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
-      GroupName: !Sub "edgedb-${InstanceName}-ec2-security-group"
+      GroupName: !Sub "${InstanceName}-ec2-sg"
       GroupDescription: !Sub "Security group to control access to EC2 instances inside the ${InstanceName} stack"
       VpcId: !Ref "VPC"
       SecurityGroupIngress:
@@ -333,7 +333,7 @@ Resources:
           ToPort: 5656
       Tags:
         - Key: "Name"
-          Value: !Sub "edgedb-${InstanceName}-ec2-security-group"
+          Value: !Sub "${InstanceName}-ec2-sg"
 
   # ---------------------
   # Aurora Security Group
@@ -343,7 +343,7 @@ Resources:
   RDSSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
-      GroupName: !Sub "edgedb-${InstanceName}-rds-security-group"
+      GroupName: !Sub "${InstanceName}-rds-sg"
       GroupDescription: !Sub "Security group controlling access to RDS PostgreSQL instance inside the ${InstanceName} stack"
       VpcId: !Ref "VPC"
       SecurityGroupIngress:
@@ -354,13 +354,13 @@ Resources:
 
       Tags:
         - Key: "Name"
-          Value: !Sub "edgedb-${InstanceName}-rds-security-group"
+          Value: !Sub "${InstanceName}-rds-sg"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-rds-dbsubnet-group.html
   RDSSubnetGroup:
     Type: "AWS::RDS::DBSubnetGroup"
     Properties:
-      DBSubnetGroupName: !Sub "edgedb-${InstanceName}-rds-subnet-group"
+      DBSubnetGroupName: !Sub "${InstanceName}-rds-sng"
       DBSubnetGroupDescription: !Sub "EdgeDB RDS Subnet Group for ${InstanceName}"
       SubnetIds:
         - !Ref "SubnetAPrivate"
@@ -375,7 +375,7 @@ Resources:
   DBPassword:
     Type: "AWS::SecretsManager::Secret"
     Properties:
-      Name: !Sub "edgedb-${InstanceName}-password"
+      Name: !Sub "${InstanceName}-password"
       SecretString: !Ref SuperUserPassword
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-rds-dbcluster.html
@@ -385,7 +385,7 @@ Resources:
     Properties:
       Engine: "aurora-postgresql"
       EngineVersion: "13.4"
-      DBClusterIdentifier: !Sub "edgedb-${InstanceName}-postgres-cluster"
+      DBClusterIdentifier: !Sub "${InstanceName}-pgc"
       DBSubnetGroupName: !Ref "RDSSubnetGroup"
       MasterUsername: "postgres"
       MasterUserPassword: !Ref "SuperUserPassword"
@@ -416,7 +416,7 @@ Resources:
     DependsOn: [AuroraInstanceA, AuroraInstanceB]
     Type: "AWS::SecretsManager::Secret"
     Properties:
-      Name: !Sub "edgedb-${InstanceName}-backend-dsn"
+      Name: !Sub "${InstanceName}-pg-dsn"
       SecretString: !Join [
         "",
         [
@@ -439,7 +439,7 @@ Resources:
   ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "edgedb-${InstanceName}-execution-role"
+      RoleName: !Sub "${InstanceName}-exec-role"
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -463,7 +463,7 @@ Resources:
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "edgedb-${InstanceName}-task-role"
+      RoleName: !Sub "${InstanceName}-task-role"
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -481,7 +481,7 @@ Resources:
   Cluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub "edgedb-${InstanceName}-server-cluster"
+      ClusterName: !Sub "${InstanceName}-clstr"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ecs-taskdefinition.html
   TaskDefinition:
@@ -495,7 +495,7 @@ Resources:
       TaskRoleArn: !Ref TaskRole
 
       # These are configurable
-      Family: !Sub "edgedb-${InstanceName}-task-definition"
+      Family: !Sub "${InstanceName}-task-def"
       Cpu: 1024
       Memory: "2GB"
       ContainerDefinitions:
@@ -561,7 +561,7 @@ Resources:
       HealthCheckProtocol: HTTPS
       UnhealthyThresholdCount: 2
       HealthyThresholdCount: 2
-      Name: !Sub "edgedb-${InstanceName}-target-group"
+      Name: !Sub "${InstanceName}-tg"
       Port: 5656
       Protocol: TCP
       TargetGroupAttributes:
@@ -587,24 +587,29 @@ Resources:
     DependsOn: VPCGatewayAttachment
     Properties:
       Type: network
-      Name: !Sub "edgedb-${InstanceName}-load-balancer"
+      Name: !Sub "${InstanceName}-lb"
       Scheme: internet-facing
       Subnets:
         - !Ref "SubnetAPublic"
         - !Ref "SubnetBPublic"
 
 Outputs:
+
+  PublicHostname:
+    Description: "Host name of EdgeDB instance"
+    Value: !GetAtt LoadBalancer.DNSName
+
   SubnetAPublic:
     Description: "Subnet A public."
     Value: !Ref SubnetAPublic
     Export:
-      Name: !Sub "${AWS::StackName}-SubnetAPublic"
+      Name: !Sub "${AWS::StackName}-SubA"
 
   SubnetBPublic:
     Description: "Subnet B public."
     Value: !Ref SubnetBPublic
     Export:
-      Name: !Sub "${AWS::StackName}-SubnetBPublic"
+      Name: !Sub "${AWS::StackName}-SubB"
 
   EC2SecurityGroupID:
     Description: "The ID of the EC2 Security group"
