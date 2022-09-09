@@ -594,6 +594,11 @@ Resources:
         - !Ref "SubnetBPublic"
 
 Outputs:
+
+  PublicHostname:
+    Description: "Host name of EdgeDB instance"
+    Value: !GetAtt LoadBalancer.DNSName
+    
   SubnetAPublic:
     Description: "Subnet A public."
     Value: !Ref SubnetAPublic
