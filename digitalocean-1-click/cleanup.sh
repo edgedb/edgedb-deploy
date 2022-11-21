@@ -5,6 +5,7 @@ history -c
 cat /dev/null > /root/.bash_history
 unset HISTFILE
 
+apt-get -y purge droplet-agent
 apt-get -y autoremove
 apt-get -y autoclean
 
