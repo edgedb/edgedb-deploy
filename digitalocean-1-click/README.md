@@ -7,7 +7,7 @@
 
 ```bash
 export DIGITALOCEAN_ACCESS_TOKEN=<your-token-here>
-packer build -var 'package_version=1' image.pkr.hcl
+packer build -var 'package_version=2' image.pkr.hcl
 ```
 
 Documentation on building images for DigitalOcean Marketplace is
