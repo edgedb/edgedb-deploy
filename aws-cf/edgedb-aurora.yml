@@ -506,8 +506,8 @@ Resources:
           Command:
             - "edgedb-server"
           Environment:
-            - Name: "EDGEDB_SERVER_GENERATE_SELF_SIGNED_CERT"
-              Value: "1"
+            - Name: "EDGEDB_SERVER_TLS_CERT_MODE"
+              Value: "generate_self_signed"
           Secrets:
             - Name: "EDGEDB_SERVER_PASSWORD"
               ValueFrom: !Ref "DBPassword"
