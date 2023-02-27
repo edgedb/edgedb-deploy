@@ -14,7 +14,7 @@ Parameters:
   DockerImage:
     Description: "Name and tag of the EdgeDB Docker Image"
     Type: String
-    Default: "edgedb/edgedb"
+    Default: "edgedb/edgedb:nightly"
 
   InstanceName:
     Description: "The name of this EdgeDB service stack."
@@ -402,18 +402,10 @@ Resources:
       DBInstanceClass: db.t3.medium
       DBSubnetGroupName: !Ref "RDSSubnetGroup"
 
-  AuroraInstanceB:
-    Type: "AWS::RDS::DBInstance"
-    Properties:
-      AvailabilityZone: !GetAtt "SubnetBPrivate.AvailabilityZone"
-      Engine: "aurora-postgresql"
-      DBClusterIdentifier: !Ref AuroraCluster
-      DBInstanceClass: db.t3.medium
-      DBSubnetGroupName: !Ref "RDSSubnetGroup"
 
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html
   AuroraDSN:
-    DependsOn: [AuroraInstanceA, AuroraInstanceB]
+    DependsOn: [AuroraInstanceA]
     Type: "AWS::SecretsManager::Secret"
     Properties:
       Name: !Sub "edgedb-${InstanceName}-backend-dsn"
@@ -532,7 +524,7 @@ Resources:
       DeploymentConfiguration:
         MinimumHealthyPercent: 100
         MaximumPercent: 200
-      DesiredCount: 2
+      DesiredCount: 1
       HealthCheckGracePeriodSeconds: 120
       LaunchType: FARGATE
       NetworkConfiguration:
@@ -598,7 +590,7 @@ Outputs:
   PublicHostname:
     Description: "Host name of EdgeDB instance"
     Value: !GetAtt LoadBalancer.DNSName
-    
+
   SubnetAPublic:
     Description: "Subnet A public."
     Value: !Ref SubnetAPublic
