@@ -79,7 +79,7 @@ fi
 if [ -z "\$EDGEDB_SERVER_BACKEND_DSN" ]; then
 	args="\$args --data-dir=/var/lib/edgedb/data"
 else
-	args="\$args --postgres-dsn=\$EDGEDB_SERVER_BACKEND_DSN"
+	args="\$args --backend-dsn=\$EDGEDB_SERVER_BACKEND_DSN"
 fi
 
 /usr/bin/${EDGEDB_SERVER_BIN} \$args
