@@ -2,7 +2,18 @@
 
 set -ex
 
+ufw limit ssh
+ufw allow 5656/tcp
+ufw --force enable
+
+fallocate -l 1G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
 mkdir -p /etc/apt/trusted.gpg.d/
+export DEBIAN_FRONTEND=noninteractive
 
 curl -fsSL -o /etc/apt/trusted.gpg.d/edgedb.asc \
 	https://packages.edgedb.com/keys/edgedb.asc
@@ -13,27 +24,9 @@ curl -fsSL -o /etc/apt/trusted.gpg.d/edgedb.asc \
 	| tee /etc/apt/sources.list.d/edgedb.list
 )
 
-try=1
-while [ $try -le 30 ]; do
-	apt-get update && break || true
-	try=$(( $try + 1 ))
-	echo "Retrying in 10 seconds (try #${try})"
-	sleep 10
-done
-try=1
-while [ $try -le 30 ]; do
-	apt-get -y upgrade && break || true
-	try=$(( $try + 1 ))
-	echo "Retrying in 10 seconds (try #${try})"
-	sleep 10
-done
-try=1
-while [ $try -le 30 ]; do
-	apt-get -y install edgedb-cli $EDGEDB_PKG && break || true
-	try=$(( $try + 1 ))
-	echo "Retrying in 10 seconds (try #${try})"
-	sleep 10
-done
+apt-get -o DPkg::Lock::Timeout=60 update
+apt-get -o DPkg::Lock::Timeout=60 -y dist-upgrade
+apt-get -o DPkg::Lock::Timeout=60 -y install edgedb-cli $EDGEDB_PKG libuuid1 tzdata libsystemd-dev libsystemd0
 
 mkdir -p /var/lib/edgedb/data
 chown --recursive edgedb:edgedb /var/lib/edgedb
