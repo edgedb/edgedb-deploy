@@ -1,0 +1,610 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template will deploy an EdgeDB instance to ECS and connect it
+  to Aurora Serverless PostgreSQL Cluster.
+
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html
+Parameters:
+  SuperUserPassword:
+    Description: "The password that will be used for the database superuser"
+    Type: String
+    NoEcho: True
+    MinLength: 6
+
+  DockerImage:
+    Description: "Name and tag of the EdgeDB Docker Image"
+    Type: String
+    Default: "edgedb/edgedb:nightly"
+
+  InstanceName:
+    Description: "The name of this EdgeDB service stack."
+    Type: String
+    Default: "project"
+    AllowedPattern: '[a-z][0-9a-z-]{1,24}'
+    ConstraintDescription: >
+      must only contain lowercase letters and numbers, start with
+      a lowercase letter, and be between 2 and 25 characters long
+
+Resources:
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-vpc"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-internet-gateway"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc-gateway-attachment.html
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+
+  # ------------------
+  # PUBLIC NETWORK ACL
+  # ------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkacl.html
+  NetworkAclPublic:
+    Type: "AWS::EC2::NetworkAcl"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-public-network-acl"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
+  NetworkAclEntryInPublicAllowInternet:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref NetworkAclPublic
+      RuleNumber: 99
+      Protocol: 6
+      PortRange:
+        From: 0
+        To: 65535
+      RuleAction: allow
+      Egress: false
+      CidrBlock: "0.0.0.0/0"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
+  NetworkAclEntryOutPublicAllowInternet:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref NetworkAclPublic
+      RuleNumber: 99
+      Protocol: 6
+      PortRange:
+        From: 0
+        To: 65535
+      RuleAction: allow
+      Egress: true
+      CidrBlock: "0.0.0.0/0"
+
+
+  # -------------------
+  # PRIVATE NETWORK ACL
+  # -------------------
+
+  # NOTE: there's no difference from the public ACL above, because the
+  #       accessibility of the subnets is determined by MapPublicIpOnLaunch.
+  #       We still create an explicit ACL for clarity.
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkacl.html
+  NetworkAclPrivate:
+    Type: "AWS::EC2::NetworkAcl"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-private-network-acl"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
+  NetworkAclEntryInPrivateAllowVPC:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref NetworkAclPrivate
+      RuleNumber: 99
+      Protocol: -1
+      RuleAction: allow
+      Egress: false
+      CidrBlock: "0.0.0.0/0"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-networkaclentry.html
+  NetworkAclEntryOutPrivateAllowVPC:
+    Type: "AWS::EC2::NetworkAclEntry"
+    Properties:
+      NetworkAclId: !Ref NetworkAclPrivate
+      RuleNumber: 99
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: "0.0.0.0/0"
+
+  # -----------------------
+  # PUBLIC SUBNET IN AZ "A"
+  # -----------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet.html
+  SubnetAPublic:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: "10.0.0.0/20"
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-subnet-a-public"
+        - Key: Reach
+          Value: public
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-network-acl-assoc.html
+  SubnetNetworkAclAssociationAPublic:
+    Type: "AWS::EC2::SubnetNetworkAclAssociation"
+    Properties:
+      SubnetId: !Ref SubnetAPublic
+      NetworkAclId: !Ref NetworkAclPublic
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html
+  RouteTableAPublic:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-route-table-a-public"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-route.html
+  RouteTableAPublicInternetRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTableAPublic
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-route-table-assoc.html
+  RouteTableAssociationAPublic:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetAPublic
+      RouteTableId: !Ref RouteTableAPublic
+
+  # ------------------------
+  # PRIVATE SUBNET IN AZ "A"
+  # ------------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet.html
+  SubnetAPrivate:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: "10.0.16.0/20"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-subnet-a-private"
+        - Key: Reach
+          Value: private
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html
+  RouteTableAPrivate:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-route-table-a-private"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-network-acl-assoc.html
+  SubnetNetworkAclAssociationAPrivate:
+    Type: "AWS::EC2::SubnetNetworkAclAssociation"
+    Properties:
+      SubnetId: !Ref SubnetAPrivate
+      NetworkAclId: !Ref NetworkAclPrivate
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-route-table-assoc.html
+  RouteTableAssociationAPrivate:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetAPrivate
+      RouteTableId: !Ref RouteTableAPrivate
+
+  # -----------------------
+  # PUBLIC SUBNET IN AZ "B"
+  # -----------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet.html
+  SubnetBPublic:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: "10.0.32.0/20"
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-subnet-b-public"
+        - Key: Reach
+          Value: public
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-network-acl-assoc.html
+  SubnetNetworkAclAssociationBPublic:
+    Type: "AWS::EC2::SubnetNetworkAclAssociation"
+    Properties:
+      SubnetId: !Ref SubnetBPublic
+      NetworkAclId: !Ref NetworkAclPublic
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html
+  RouteTableBPublic:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-route-table-b-public"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-route.html
+  RouteTableBPublicInternetRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTableBPublic
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-route-table-assoc.html
+  RouteTableAssociationBPublic:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetBPublic
+      RouteTableId: !Ref RouteTableBPublic
+
+  # ------------------------
+  # PRIVATE SUBNET IN AZ "B"
+  # ------------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet.html
+  SubnetBPrivate:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: "10.0.48.0/20"
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-subnet-b-private"
+        - Key: Reach
+          Value: private
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html
+  RouteTableBPrivate:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "edgedb-${InstanceName}-route-table-b-private"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-network-acl-assoc.html
+  SubnetNetworkAclAssociationBPrivate:
+    Type: "AWS::EC2::SubnetNetworkAclAssociation"
+    Properties:
+      SubnetId: !Ref SubnetBPrivate
+      NetworkAclId: !Ref NetworkAclPrivate
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-subnet-route-table-assoc.html
+  RouteTableAssociationBPrivate:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetBPrivate
+      RouteTableId: !Ref RouteTableBPrivate
+
+  # ------------------
+  # ECS Security Group
+  # ------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
+  EC2SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: !Sub "edgedb-${InstanceName}-ec2-security-group"
+      GroupDescription: !Sub "Security group to control access to EC2 instances inside the ${InstanceName} stack"
+      VpcId: !Ref "VPC"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          CidrIp: "0.0.0.0/0"
+          FromPort: 5656
+          ToPort: 5656
+      Tags:
+        - Key: "Name"
+          Value: !Sub "edgedb-${InstanceName}-ec2-security-group"
+
+  # ---------------------
+  # Aurora Security Group
+  # ---------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html
+  RDSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: !Sub "edgedb-${InstanceName}-rds-security-group"
+      GroupDescription: !Sub "Security group controlling access to RDS PostgreSQL instance inside the ${InstanceName} stack"
+      VpcId: !Ref "VPC"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          SourceSecurityGroupId: !Ref "EC2SecurityGroup"
+          FromPort: 5432
+          ToPort: 5432
+
+      Tags:
+        - Key: "Name"
+          Value: !Sub "edgedb-${InstanceName}-rds-security-group"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-rds-dbsubnet-group.html
+  RDSSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupName: !Sub "edgedb-${InstanceName}-rds-subnet-group"
+      DBSubnetGroupDescription: !Sub "EdgeDB RDS Subnet Group for ${InstanceName}"
+      SubnetIds:
+        - !Ref "SubnetAPrivate"
+        - !Ref "SubnetBPrivate"
+
+
+  # --------------
+  # Aurora Cluster
+  # --------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html
+  DBPassword:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Name: !Sub "edgedb-${InstanceName}-password"
+      SecretString: !Ref SuperUserPassword
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-rds-dbcluster.html
+  AuroraCluster:
+    DependsOn: RDSSubnetGroup
+    Type: "AWS::RDS::DBCluster"
+    Properties:
+      Engine: "aurora-postgresql"
+      EngineVersion: "13.4"
+      DBClusterIdentifier: !Sub "edgedb-${InstanceName}-postgres-cluster"
+      DBSubnetGroupName: !Ref "RDSSubnetGroup"
+      MasterUsername: "postgres"
+      MasterUserPassword: !Ref "SuperUserPassword"
+      Port: 5432
+      VpcSecurityGroupIds:
+        - !Ref "RDSSecurityGroup"
+
+  AuroraInstanceA:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      AvailabilityZone: !GetAtt "SubnetAPrivate.AvailabilityZone"
+      Engine: "aurora-postgresql"
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.t3.medium
+      DBSubnetGroupName: !Ref "RDSSubnetGroup"
+
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-secretsmanager-secret.html
+  AuroraDSN:
+    DependsOn: [AuroraInstanceA]
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Name: !Sub "edgedb-${InstanceName}-backend-dsn"
+      SecretString: !Join [
+        "",
+        [
+          "postgres://",
+          "postgres",
+          ":",
+          !Ref "SuperUserPassword",
+          "@",
+          !GetAtt "AuroraCluster.Endpoint.Address",
+          ":5432/",
+          "postgres"
+        ],
+      ]
+
+  # ------------------
+  # EdgeDB ECS Cluster
+  # ------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "edgedb-${InstanceName}-execution-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - PolicyName: Secrets-Access-Policy
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "secretsmanager:GetSecretValue"
+                Resource:
+                  - !Ref DBPassword
+                  - !Ref AuroraDSN
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "edgedb-${InstanceName}-task-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: "sts:AssumeRole"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-logs-loggroup.html
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/edgedb/${InstanceName}"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ecs-cluster.html
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "edgedb-${InstanceName}-server-cluster"
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ecs-taskdefinition.html
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: LogGroup
+    Properties:
+      # These are invariant for Fargate
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !Ref ExecutionRole
+      TaskRoleArn: !Ref TaskRole
+
+      # These are configurable
+      Family: !Sub "edgedb-${InstanceName}-task-definition"
+      Cpu: 1024
+      Memory: "2GB"
+      ContainerDefinitions:
+        - Name: !Ref InstanceName
+          Image: !Ref DockerImage
+          PortMappings:
+            - ContainerPort: 5656
+          Command:
+            - "edgedb-server"
+          Environment:
+            - Name: "EDGEDB_SERVER_TLS_CERT_MODE"
+              Value: "generate_self_signed"
+          Secrets:
+            - Name: "EDGEDB_SERVER_PASSWORD"
+              ValueFrom: !Ref "DBPassword"
+            - Name: "EDGEDB_SERVER_BACKEND_DSN"
+              ValueFrom: !Ref "AuroraDSN"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ecs-service.html
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - Listener5656
+    Properties:
+      ServiceName: !Ref InstanceName
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      DesiredCount: 1
+      HealthCheckGracePeriodSeconds: 120
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref "SubnetAPublic"
+            - !Ref "SubnetBPublic"
+          SecurityGroups:
+            - !Ref "EC2SecurityGroup"
+      LoadBalancers:
+        - ContainerName: !Ref InstanceName
+          ContainerPort: 5656
+          TargetGroupArn: !Ref TargetGroup
+
+  # --------------------
+  # EdgeDB Load Balancer
+  # --------------------
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-targetgroup.html
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /server/status/ready
+      HealthCheckProtocol: HTTPS
+      UnhealthyThresholdCount: 2
+      HealthyThresholdCount: 2
+      Name: !Sub "edb-${InstanceName}-tg"
+      Port: 5656
+      Protocol: TCP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 60
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-listener.html
+  Listener5656:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 5656
+      Protocol: TCP
+
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-loadbalancer.html
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Type: network
+      Name: !Sub "edb-${InstanceName}-lb"
+      Scheme: internet-facing
+      Subnets:
+        - !Ref "SubnetAPublic"
+        - !Ref "SubnetBPublic"
+
+Outputs:
+
+  PublicHostname:
+    Description: "Host name of EdgeDB instance"
+    Value: !GetAtt LoadBalancer.DNSName
+
+  SubnetAPublic:
+    Description: "Subnet A public."
+    Value: !Ref SubnetAPublic
+    Export:
+      Name: !Sub "${AWS::StackName}-SubnetAPublic"
+
+  SubnetBPublic:
+    Description: "Subnet B public."
+    Value: !Ref SubnetBPublic
+    Export:
+      Name: !Sub "${AWS::StackName}-SubnetBPublic"
+
+  EC2SecurityGroupID:
+    Description: "The ID of the EC2 Security group"
+    Value: !GetAtt EC2SecurityGroup.GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}-EC2-ID"
